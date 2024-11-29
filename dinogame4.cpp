@@ -6,26 +6,26 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-// Defini��o de constantes
+// Definiçao de constantes
 #define MAX_DINOS 12
 #define MAX_MISSILES 5
 #define SCREEN_WIDTH 60
 #define SCREEN_HEIGHT 25
 #define COLLISION_DISTANCE 2
-#define TRUCK_ARRIVAL_TIME 8000 // Tempo em milissegundos para o caminh�o reabastecer
-#define TRUCK_SPEED 1            // Velocidade do caminh�o (quanto menor, mais r�pido)
+#define TRUCK_ARRIVAL_TIME 8000 // Tempo em milissegundos para o caminhao reabastecer
+#define TRUCK_SPEED 1            // Velocidade do caminhao (quanto menor, mais rapido)
 
-// Vari�veis do jogo
-int depot_slots;      // N�mero de slots de m�sseis no dep�sito
-int depot_missiles;   // N�mero de m�sseis no dep�sito
-int missiles_needed;  // N�mero de m�sseis necess�rios para matar um dinossauro
-int current_dinos;    // N�mero de dinossauros atualmente vivos
+// Variaveis do jogo
+int depot_slots;      // Numero de slots de misseis no deposito
+int depot_missiles;   // Numero de misseis no deposito
+int missiles_needed;  // Numero de misseis necessarios para matar um dinossauro
+int current_dinos;    // Numero de dinossauros atualmente vivos
 int total_dinos;      // Total de dinossauros gerados
 bool game_over = false;
-int score = 0; // Pontua��o do jogador
+int score = 0; // Pontuaçao do jogador
 
 
-// Estrutura do helic�ptero
+// Estrutura do helicoptero
 typedef struct {
     int x;
     int y;
@@ -48,44 +48,45 @@ typedef struct {
 
 Dino dinos[MAX_DINOS];
 
-// Estrutura dos m�sseis
+// Estrutura dos misseis
 typedef struct {
     int x, y;
     bool active;
+    pthread_t thread_id; // Thread ID para cada missil
 } Missile;
 
-Missile missiles[MAX_MISSILES];
+Missile missiles[MAX_MISSILES]; // Array de misseis
 
-// Vari�veis do caminh�o
+// Variaveis do caminhao
 typedef struct {
     int x;
     int y;
-    bool active; // Se o caminh�o est� vis�vel/movendo
+    bool active; // Se o caminhao esta visivel/movendo
 } Truck;
 
-Truck truck = {SCREEN_WIDTH, SCREEN_HEIGHT - 7, false};
+Truck truck = {SCREEN_WIDTH, SCREEN_HEIGHT - 2, false};
 
-// Mutexes e vari�veis de condi��o
+// Mutexes e variaveis de condiçao
 pthread_mutex_t depot_mutex;
 pthread_mutex_t helicopter_mutex;
 pthread_mutex_t dinos_mutex;
 pthread_mutex_t console_mutex;
 
-// Declara��o das threads
+// Declaraçao das threads
 pthread_t input_thread;
 pthread_t truck_thread;
 pthread_t dino_manager_thread;
 pthread_t dino_threads[MAX_DINOS];
 
-// Declara��o das fun��es
+// Declaraçao das funçoes
 void *input_function(void *arg);
 void *truck_function(void *arg);
 void *dino_function(void *arg);
 void *dino_manager_function(void *arg);
+void *missile_function(void *arg); // Funçao para cada missil
 void init_game();
 void game_loop();
 void render();
-void update_missiles();
 void check_collision();
 void check_restock();
 void draw_helicopter();
@@ -104,7 +105,7 @@ int main() {
 }
 
 void init_game() {
-    // Inicializa as vari�veis do jogo e define o n�vel de dificuldade
+    // Inicializa as variaveis do jogo e define o nivel de dificuldade
     int difficulty;
     printf("Selecione o nivel de dificuldade (1-Facil, 2-Medio, 3-Dificil): ");
     scanf("%d", &difficulty);
@@ -145,7 +146,7 @@ void init_game() {
     dinos[0].alive = true;
     dinos[0].direction = -1; // Direita para esquerda
 
-    // Inicializa os m�sseis
+    // Inicializa os misseis
     for (int i = 0; i < MAX_MISSILES; i++) {
         missiles[i].active = false;
     }
@@ -173,13 +174,10 @@ void init_game() {
 void game_loop() {
     while (!game_over && !helicopter.destroyed) {
         render(); // Atualiza a tela
-        update_missiles(); // Atualiza os m�sseis
-        check_collision(); // Verifica colis�es
-        check_restock(); // Verifica reabastecimento do helic�ptero
+        check_collision(); // Verifica colisoes
+        check_restock(); // Verifica reabastecimento do helicoptero
         Sleep(25); // Pausa para controle de tempo
     }
-
-    Sleep(3000);
 
     printf("\nFim de jogo! Pressione qualquer tecla para sair.\n");
 }
@@ -190,7 +188,7 @@ void render() {
     // Limpa a tela
     clear_screen();
 
-    // Desenha o helic�ptero
+    // Desenha o helicoptero
     pthread_mutex_lock(&helicopter_mutex);
     draw_helicopter();
     pthread_mutex_unlock(&helicopter_mutex);
@@ -204,7 +202,7 @@ void render() {
     }
     pthread_mutex_unlock(&dinos_mutex);
 
-    // Desenha os m�sseis
+    // Desenha os misseis
     for (int i = 0; i < MAX_MISSILES; i++) {
         if (missiles[i].active) {
             gotoxy(missiles[i].x, missiles[i].y);
@@ -212,21 +210,21 @@ void render() {
         }
     }
 
-    // Desenha o dep�sito
+    // Desenha o deposito
     draw_depot();
 
-    // Desenha o caminh�o se estiver ativo
+    // Desenha o caminhao se estiver ativo
     if (truck.active) {
         draw_truck();
     }
 
-    // Exibe informa��es do jogo
+    // Exibe informaçoes do jogo
     gotoxy(0, 0);
-    printf("M�sseis no helic�ptero: %d   ", helicopter.missiles);
-    printf("M�sseis no dep�sito: %d   ", depot_missiles);
+    printf("Misseis no helicoptero: %d   ", helicopter.missiles);
+    printf("Misseis no deposito: %d   ", depot_missiles);
     printf("Dinossauros atuais: %d   ", current_dinos);
     gotoxy(0, 1); // Exibe o score na segunda linha
-    printf("Pontua��o: %d", score);
+    printf("Pontuacao: %d", score);
 
     pthread_mutex_unlock(&console_mutex);
 }
@@ -255,7 +253,7 @@ void *input_function(void *arg) {
                         break;
                 }
                 pthread_mutex_unlock(&helicopter_mutex);
-            } else if (ch == ' ') { // Barra de espa�o para disparar
+            } else if (ch == ' ') { // Barra de espaço para disparar
                 pthread_mutex_lock(&helicopter_mutex);
                 if (helicopter.missiles > 0) {
                     for (int i = 0; i < MAX_MISSILES; i++) {
@@ -264,6 +262,8 @@ void *input_function(void *arg) {
                             missiles[i].y = helicopter.y;
                             missiles[i].active = true;
                             helicopter.missiles--;
+                            // Cria uma thread para o missil
+                            pthread_create(&missiles[i].thread_id, NULL, missile_function, (void *)(intptr_t)i);
                             break;
                         }
                     }
@@ -276,33 +276,39 @@ void *input_function(void *arg) {
     return NULL;
 }
 
+void *missile_function(void *arg) {
+    int index = (int)(intptr_t)arg;
+    while (missiles[index].active && !game_over) {
+        pthread_mutex_lock(&console_mutex);
+        missiles[index].x += 4; // Aumenta a velocidade dos misseis
 
-void update_missiles() {
-    for (int i = 0; i < MAX_MISSILES; i++) {
-        if (missiles[i].active) {
-            missiles[i].x += 4; // Aumenta a velocidade dos m�sseis
-
-            if (missiles[i].x >= SCREEN_WIDTH) {
-                missiles[i].active = false; // Desativa o m�ssil ao sair da tela
-            }
-
-            // Verifica colis�o com dinossauros
-            pthread_mutex_lock(&dinos_mutex);
-            for (int j = 0; j < total_dinos; j++) {
-                if (dinos[j].alive && abs(missiles[i].x - dinos[j].x) < COLLISION_DISTANCE &&
-                    abs(missiles[i].y - dinos[j].y) < COLLISION_DISTANCE) {
-                    dinos[j].health--;
-                    missiles[i].active = false; // Desativa o m�ssil
-                    if (dinos[j].health <= 0) {
-                        dinos[j].alive = false;
-                        current_dinos--;
-                        score += 10; // Incrementa a pontua��o ao eliminar um dinossauro
-                    }
-                }
-            }
-            pthread_mutex_unlock(&dinos_mutex);
+        if (missiles[index].x >= SCREEN_WIDTH) {
+            missiles[index].active = false; // Desativa o missil ao sair da tela
+            pthread_mutex_unlock(&console_mutex);
+            break; // Sai do loop e termina a thread
         }
+
+        // Verifica colisao com dinossauros
+        pthread_mutex_lock(&dinos_mutex);
+        for (int j = 0; j < total_dinos; j++) {
+            if (dinos[j].alive && abs(missiles[index].x - dinos[j].x) < COLLISION_DISTANCE &&
+                abs(missiles[index].y - dinos[j].y) < COLLISION_DISTANCE) {
+                dinos[j].health--;
+                missiles[index].active = false; // Desativa o missil
+                if (dinos[j].health <= 0) {
+                    dinos[j].alive = false;
+                    current_dinos--;
+                    score += 10; // Incrementa a pontuaçao ao eliminar um dinossauro
+                }
+                break; // Um missil so pode atingir um dinossauro
+            }
+        }
+        pthread_mutex_unlock(&dinos_mutex);
+        pthread_mutex_unlock(&console_mutex);
+
+        Sleep(50); // Controla a velocidade do missil
     }
+    return NULL;
 }
 
 void check_collision() {
@@ -313,30 +319,30 @@ void check_collision() {
             abs(helicopter.y - dinos[i].y) < COLLISION_DISTANCE) {
             helicopter.destroyed = true;
             game_over = true;
-            printf("\nHelic�ptero destru�do por um dinossauro!\n");
-            
+            printf("\nHelicoptero destruido por um dinossauro!\n");
         }
     }
     pthread_mutex_unlock(&dinos_mutex);
     pthread_mutex_unlock(&helicopter_mutex);
 }
+
 void check_restock() {
     pthread_mutex_lock(&helicopter_mutex);
     pthread_mutex_lock(&depot_mutex);
 
-    // Define o centro e o alcance do dep�sito
+    // Define o centro e o alcance do deposito
     int depot_x = 5;
     int depot_y = SCREEN_HEIGHT - 5;
     int depot_range = 3; // Aumente este valor para ampliar o alcance
 
-    // Verifica se o helic�ptero est� dentro do alcance do dep�sito
+    // Verifica se o helicoptero esta dentro do alcance do deposito
     if (abs(helicopter.x - depot_x) <= depot_range && abs(helicopter.y - depot_y) <= depot_range) {
-        int restock = depot_slots - helicopter.missiles; // Quantidade que o helic�ptero pode recarregar
+        int restock = depot_slots - helicopter.missiles; // Quantidade que o helicoptero pode recarregar
         if (restock > 0 && depot_missiles > 0) {
             int reload_amount = (depot_missiles >= restock) ? restock : depot_missiles;
             helicopter.missiles += reload_amount;
             depot_missiles -= reload_amount;
-            printf("\nHelic�ptero reabastecido com %d m�sseis!\n", reload_amount);
+            printf("\nHelicoptero reabastecido com %d misseis!\n", reload_amount);
         }
     }
 
@@ -344,14 +350,13 @@ void check_restock() {
     pthread_mutex_unlock(&helicopter_mutex);
 }
 
-
 void *dino_function(void *arg) {
     int index = (int)(intptr_t)arg;
     while (dinos[index].alive && !game_over) {
         pthread_mutex_lock(&dinos_mutex);
         dinos[index].x += dinos[index].direction;
 
-        // Altera dire��o ao atingir as bordas
+        // Altera direçao ao atingir as bordas
         if (dinos[index].x <= 0 || dinos[index].x >= SCREEN_WIDTH - 10) {
             dinos[index].direction *= -1;
         }
@@ -364,12 +369,12 @@ void *dino_function(void *arg) {
 
 void *dino_manager_function(void *arg) {
     while (!game_over) {
-        Sleep(7000); // Gera novos dinossauros a cada 8 segundos
+        Sleep(7000); // Gera novos dinossauros a cada 7 segundos
         pthread_mutex_lock(&dinos_mutex);
         if (total_dinos < MAX_DINOS) {
             int index = total_dinos;
-            dinos[index].x = SCREEN_WIDTH - 10;
-            dinos[index].y = rand() % (SCREEN_HEIGHT - 5);
+            dinos[index].x = SCREEN_WIDTH - 15;
+            dinos[index].y = rand() % (SCREEN_HEIGHT - 15);
             dinos[index].health = missiles_needed;
             dinos[index].alive = true;
             dinos[index].direction = rand() % 2 == 0 ? -1 : 1;
@@ -381,10 +386,10 @@ void *dino_manager_function(void *arg) {
             game_over = true;
             printf("\nGame Over! Muitos dinossauros na tela!\n");
         }
-        if (total_dinos >= MAX_DINOS) {
+        if (total_dinos >= MAX_DINOS && current_dinos == 0) {
             game_over = true;
             pthread_mutex_unlock(&dinos_mutex);
-            display_congratulations(); // Exibe mensagem de "Parab�ns!!!"
+            display_congratulations(); // Exibe mensagem de "Parabens!!!"
             break;
         }
         pthread_mutex_unlock(&dinos_mutex);
@@ -392,31 +397,45 @@ void *dino_manager_function(void *arg) {
     return NULL;
 }
 
-
-
 void *truck_function(void *arg) {
     while (!game_over) {
-        Sleep(TRUCK_ARRIVAL_TIME); // Espera at� o caminh�o aparecer
+        Sleep(TRUCK_ARRIVAL_TIME); // Espera ate o caminhao aparecer
         pthread_mutex_lock(&depot_mutex);
         truck.active = true;
-        truck.x = SCREEN_WIDTH; // Caminh�o come�a na direita da tela
+        truck.x = SCREEN_WIDTH; // Caminhao começa na direita da tela
         pthread_mutex_unlock(&depot_mutex);
 
-        // Move o caminh�o para a esquerda
-        while (truck.x > 5) {
+        // Move o caminhao para a esquerda
+        while (truck.x > 5 && !game_over) {
             pthread_mutex_lock(&console_mutex);
             truck.x -= TRUCK_SPEED;
             pthread_mutex_unlock(&console_mutex);
-            Sleep(100); // Controle de velocidade do caminh�o
+            Sleep(100); // Controle de velocidade do caminhao
         }
 
-        // Quando o caminh�o chega ao dep�sito
+        // Quando o caminhao chega ao deposito
         pthread_mutex_lock(&depot_mutex);
-        depot_missiles = depot_slots; // Reabastece o dep�sito
-        truck.active = false;        // Caminh�o desaparece ap�s o reabastecimento
-        printf("\nCaminh�o abasteceu o dep�sito!\n");
+        depot_missiles = depot_slots; // Reabastece o deposito
+		truck.active = false;        // Caminhao desaparece apos o reabastecimento
+        //Sleep(1000);
+		//printf("\nCaminhao abasteceu o deposito!\n");
         pthread_mutex_unlock(&depot_mutex);
-    }
+        
+         pthread_mutex_lock(&console_mutex);
+        truck.active = true;
+        pthread_mutex_unlock(&console_mutex);
+        
+        // Move o caminhao para a direita
+        while (truck.x < SCREEN_WIDTH && !game_over) {
+            pthread_mutex_lock(&console_mutex);
+            truck.x += TRUCK_SPEED;
+            pthread_mutex_unlock(&console_mutex);
+            Sleep(75); // Controle de velocidade do caminhao
+   		 }
+    	pthread_mutex_lock(&console_mutex);
+        truck.active = false  ;
+        pthread_mutex_unlock(&console_mutex);
+	}
     return NULL;
 }
 
@@ -467,18 +486,18 @@ void draw_dino(int index) {
 
 void display_congratulations() {
     clear_screen();
-    int center_x = SCREEN_WIDTH / 2 - 5; // Ajusta para centralizar "Parab�ns!!!"
+    int center_x = SCREEN_WIDTH / 2 - 5; // Ajusta para centralizar "Parabens!!!"
     int center_y = SCREEN_HEIGHT / 2;
 
     // Exibe a mensagem no centro da tela
     gotoxy(center_x, center_y);
-    printf("Parab�ns!!!");
+    printf("Parabens!!!");
     gotoxy(center_x - 10, center_y + 2);
-    printf("Voc� derrotou todos os dinossauros!");
+    printf("Voce derrotou todos os dinossauros!");
 
     // Exibe o score final
     gotoxy(center_x - 8, center_y + 4);
-    printf("Pontua��o final: %d", score);
+    printf("Pontuaçao final: %d", score);
 
     // Mensagem de pausa
     gotoxy(center_x - 15, center_y + 6);
@@ -490,9 +509,8 @@ void display_congratulations() {
     // Permite que o jogador saia
     gotoxy(center_x - 15, center_y + 6);
     printf("Pressione qualquer tecla para sair...");
-    getch(); // Espera o usu�rio pressionar uma tecla
+    getch(); // Espera o usuario pressionar uma tecla
 }
-
 
 void clear_screen() {
     system("cls");
@@ -512,4 +530,3 @@ void hidecursor() {
     info.bVisible = FALSE;
     SetConsoleCursorInfo(consoleHandle, &info);
 }
-
